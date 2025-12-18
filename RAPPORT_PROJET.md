@@ -1,84 +1,53 @@
-# Rapport Détaillé du Projet : Framework IoT pour la Détection d'Anomalies
+# Rapport de Projet : Framework Modulaire pour la Détection d'Anomalies IoT
 
-## 1. Description du Sujet
-Le projet est un **Framework complet de traitement de données IoT en temps réel**.
-Son objectif est de surveiller un parc de capteurs connectés, de détecter instantanément des anomalies critiques (incendies, fuites de gaz, défaillances) et de fournir une visualisation en direct.
-Il met en œuvre une architecture **Big Data** robuste capable de passer à l'échelle, utilisant des technologies standards de l'industrie (Spark, Kafka, Hadoop).
+## 1. Introduction et Objectifs
 
-## 2. Architecture & Flux de Données (Pipeline)
-Le système suit un pipeline de traitement de données (Data Pipeline) en 5 étapes majeures :
+Ce projet vise à concevoir et déployer un **framework de traitement de données en temps réel** capable de surveiller un réseau de capteurs IoT. L'objectif principal est de détecter instantanément des anomalies critiques (incendies, fuites de gaz, surchauffes) dans un flux continu de données et d'alerter les opérateurs via un tableau de bord interactif.
 
-### Étape 1 : Simulation & Ingestion (Producer)
-*   **Source** : Un script Python (`producer.py`) simule des capteurs IoT en lisant le fichier `test.csv`.
-*   **Injection d'Anomalies** : De manière aléatoire (15% de chance), le producteur modifie les valeurs pour simuler des incidents :
-    *   *SURCHAUFFE* (Temp > 85°C)
-    *   *GEL* (Temp < -5°C)
-    *   *INCENDIE* (Temp très haute + Fumée)
-    *   *FUITE_GAZ* (CO et LPG élevés)
-*   **Transmission** : Les données sont sérialisées en JSON et envoyées vers un **Topic Kafka** nommé `iot_data`.
+Il s'agit d'un problème de **détection d'anomalies non-supervisée** implémenté sur une architecture Big Data distribuée.
 
-### Étape 2 : Messaging (Kafka)
-*   **Apache Kafka** agit comme un tampon (buffer) haute performance. Il découple la production (capteurs) de la consommation (analyse), garantissant qu'aucune donnée n'est perdue même si le traitement ralentit.
+## 2. Analyse et Description des Données
 
-### Étape 3 : Traitement en Streaming (Spark Structure Streaming)
-*   **Spark** s'abonne au topic Kafka et récupère les messages en micro-batchs (toutes les 2 secondes).
-*   Il décode le JSON et applique le modèle de Machine Learning pré-entraîné pour classifier chaque événement.
+### 2.1. Vue d'ensemble
+Le jeu de données utilisé provient de relevés de capteurs IoT environnementaux.
+*   **Volumétrie** : Les données sont simulées en continu à partir d'un fichier source `test.csv` (12.2 MB) et d'un fichier d'entraînement `train.csv` (36.5 MB).
+*   **Variables (Features)** : Le dataset comprend 7 mesures physiques essentielles :
+    *   `co`, `lpg`, `smoke` : Détection de gaz et qualité de l'air.
+    *   `temp`, `humidity` : Conditions climatiques.
+    *   `light`, `motion` : Conditions environnementales physiques.
+*   **Identifiants** : Chaque relevé est associé à un `device_id` unique et un horodatage.
 
-### Étape 4 : Stockage (HDFS & Local)
-Les résultats sont sauvegardés à deux endroits :
-1.  **HDFS (Hadoop Distributed File System)** : Stockage long terme au format **Parquet** (partitionné par date et par appareil) pour un historique fiable et performant.
-2.  **CSV Local (Buffer)** : Un fichier tampon (`viz_buffer.csv`) est mis à jour en temps réel pour alimenter le tableau de bord.
+### 2.2. Nettoyage et Préparation
+Avant d'être exploitées par les modèles, les données subissent plusieurs traitements automatiques dans le pipeline :
+*   **Types de Données** : Conversion explicite des valeurs brutes en flottants (`FloatType`).
+*   **Gestion des Valeurs Manquantes** : Remplacement des `null` par 0.0 pour assurer la robustesse du flux.
+*   **Normalisation** : Utilisation d'un `StandardScaler` pour centrer et réduire les données (Moyenne = 0, Écart-type = 1). Cette étape est cruciale car les échelles de valeurs sont très hétérogènes (ex: Température ~20 vs CO ~0.004).
 
-### Étape 5 : Visualisation (Streamlit)
-*   Une application web **Streamlit** lit le fichier tampon et affiche :
-    *   Les alertes en temps réel.
-    *   Les métriques des capteurs.
-    *   L'état du système (Normal / Anomalie).
+## 3. Architecture et Technologies
 
-## 3. Description de la Base de Données
-Les données proviennent d'un jeu de données de télémétrie environnementale.
+L'infrastructure repose sur une architecture micro-services entièrement conteneurisée via **Docker**.
 
-*   **Fichiers** :
-    *   `train.csv` (36.5 MB) : Base "saine" servant à définir le comportement normal.
-    *   `test.csv` (12.2 MB) : Base de test replayée en boucle.
-*   **Attributs (Features)** :
-    *   `co`, `lpg`, `smoke` : Gaz et fumées (qualité de l'air).
-    *   `temp`, `humidity` : Conditions ambiantes.
-    *   `light`, `motion` : Environnement physique.
-
-## 4. Outils & Technologies
-L'infrastructure est entièrement conteneurisée via **Docker**.
-
-| Composant | Technologie | Rôle |
+| Composant | Technologie | Description |
 | :--- | :--- | :--- |
-| **Orchestrateur** | Docker Compose | Gère le cycle de vie des conteneurs. |
-| **Broker** | Apache Kafka (+ Zookeeper) | Bus de messages centralisé. |
-| **Stockage** | Apache Hadoop (HDFS) | Système de fichiers distribué pour modèles et archives. |
-| **Moteur** | Apache Spark (PySpark) | Traitement distribué (Entraînement + Streaming). |
-| **ML** | Spark MLlib | Bibliothèque de Machine Learning scalable. |
-| **Front** | Streamlit | Interface utilisateur interactive. |
+| **Ingestion** | **Apache Kafka** | Broker de messages assurant le découplage entre les capteurs et le traitement. Topic : `iot_data`. |
+| **Traitement** | **Apache Spark** | Moteur de calcul distribué. Utilise *Spark Structured Streaming* pour l'analyse en temps réel. |
+| **Stockage** | **HDFS** | Système de fichiers distribué (Hadoop) pour stocker le modèle ML et l'historique des données (format Parquet). |
+| **Machine Learning** | **Spark MLlib** | Librairie utilisée pour entraîner et exécuter le modèle de clustering K-Means. |
+| **Visualisation** | **Streamlit** | Interface web Python pour le monitoring des alertes en temps réel. |
 
-## 5. Algorithme & Modèle Machine Learning
-Le cœur de la détection repose sur un algorithme non supervisé : **K-Means Clustering**.
+## 4. Implémentation par Modules
 
-### A. Entraînement (`train_model.py`)
-Le modèle n'apprend pas "ce qu'est une anomalie", mais **"ce qu'est la normalité"**.
-1.  **Chargement** : Lecture de `train.csv` depuis HDFS.
-2.  **Vectorisation** : Regroupement des 7 colonnes de capteurs en un seul vecteur caractéristique.
-3.  **Normalisation (StandardScaler)** : Étape critique. Comme les variables ont des unités différentes (ex: Température ~20°C vs CO ~0.005), on centre et réduit les données (Moyenne=0, Écart-type=1) pour que le K-Means ne soit pas biaisé par les grandes valeurs.
-4.  **Clustering** : L'algorithme K-Means (avec `k=2`) divise les données en 2 groupes principaux représentatifs des états standards de fonctionnement.
-5.  **Sauvegarde** : Le modèle (centres des clusters) et le Scaler (moyennes/écarts-types) sont sauvegardés dans HDFS pour être réutilisés.
+Le code est organisé de manière modulaire :
 
-### B. Détection en Temps Réel (`processor.py`)
-La détection se fait par mesure de **distance** (Distance Euclidienne).
-Pour chaque nouveau point de donnée $X$ arrivant de Kafka :
-1.  On normalise $X$ avec le Scaler chargé.
-2.  Le modèle prédit le cluster le plus proche ($C$).
-3.  On calcule la distance $D$ entre le point $X$ et le centre du cluster $C$.
-    *   $$D = \sqrt{\sum (x_i - c_i)^2}$$
-4.  **Règle de Décision** :
-    *   Si $D < 3.0$ (Seuil) $\rightarrow$ **NORMAL**. (Le point est proche d'un état connu).
-    *   Si $D \ge 3.0$ $\rightarrow$ **ANOMALY**. (Le point est statistiquement éloigné de tout comportement normal connu).
-5.  **Explication (Root Cause Analysis)** :
-    *   Si c'est une anomalie, l'algorithme regarde quelle dimension du vecteur a la plus grande différence avec le centre ($|x_i - c_i|$).
-    *   Exemple : Si la différence de température est la plus grande, la cause retournée est "temp".
+1.  **Module Ingestion (`producer.py`)** : Simule l'activité des capteurs. Il injecte aléatoirement des scénarios d'anomalies (ex: *SURCHAUFFE*, *GEL*, *INCENDIE*) pour tester la réactivité du système.
+2.  **Module Machine Learning (`train_model.py`)** : Charge les données historiques depuis HDFS, vectorise les features, et entraîne un modèle K-Means (`k=2`). Le modèle apprend à reconnaître un état "normal" de fonctionnement.
+3.  **Module Processing (`processor.py`)** : C'est le cœur du système. Il consomme le flux Kafka, normalise les données à la volée, et applique le modèle pour calculer un score d'anomalie.
+4.  **Module Visualization (`dashboard.py`)** : Lit le buffer de sortie et présente les KPIs (Température, État, Graphiques) aux utilisateurs.
+
+## 5. Algorithme de Détection (K-Means)
+
+L'approche retenue est basée sur la distance. Le modèle K-Means divise l'espace des données normales en clusters.
+
+*   **Règle de Décision** : Pour chaque nouveau point, on calcule sa **Distance Euclidienne** par rapport au centre du cluster le plus proche.
+*   **Seuil d'Alerte** : Si la distance dépasse un seuil défini (ex: `3.0`), le point est marqué comme **ANOMALY**. Sinon, il est **NORMAL**.
+*   **Root Cause Analysis** : En cas d'anomalie, l'algorithme identifie quelle variable contribue le plus à la distance (ex: "temp" si la température est inhabituellement élevée) pour expliquer la cause de l'alerte.
